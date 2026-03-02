@@ -10,8 +10,11 @@ import kotlinx.coroutines.flow.asStateFlow
 class GameViewModel : ViewModel() {
     private var currentLevel = 0
     private var completions = 0
-    private var currentIndexInLevel = 0
     private var score = 0
+
+    // СЛУЧАЙНЫЙ ПОРЯДОК внутри уровня
+    private val levelHiraganas = mutableListOf<Hiragana>()
+    private var currentHiraganaIndex = 0
 
     private val _uiState = MutableStateFlow(GameUiState(isLoading = true))
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -19,8 +22,13 @@ class GameViewModel : ViewModel() {
     fun startGame() {
         currentLevel = 0
         completions = 0
-        currentIndexInLevel = 0
         score = 0
+
+        // Перемешиваем ВСЕ буквы уровня
+        levelHiraganas.clear()
+        levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
+        currentHiraganaIndex = 0
+
         loadNextInLevel()
     }
 
@@ -30,9 +38,10 @@ class GameViewModel : ViewModel() {
 
         if (correct) {
             score += 10
-            currentIndexInLevel++
+            currentHiraganaIndex++
 
-            if (currentIndexInLevel >= state.currentLevelHiraganas.size) {
+            // Проверяем, прошли ли ВСЕ буквы уровня (в случайном порядке)
+            if (currentHiraganaIndex >= levelHiraganas.size) {
                 completions++
                 if (completions >= 3) {
                     currentLevel++
@@ -44,13 +53,17 @@ class GameViewModel : ViewModel() {
                         startNewLevel()
                     }
                 } else {
+                    // Повторяем уровень — перемешиваем заново
                     startNewLevel()
                 }
             } else {
                 loadNextInLevel()
             }
         } else {
-            currentIndexInLevel = 0
+            // Неправильно — начинаем уровень заново с НОВЫМ перемешиванием
+            levelHiraganas.clear()
+            levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
+            currentHiraganaIndex = 0
             loadNextInLevel()
         }
 
@@ -59,7 +72,9 @@ class GameViewModel : ViewModel() {
     }
 
     private fun startNewLevel() {
-        currentIndexInLevel = 0
+        levelHiraganas.clear()
+        levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
+        currentHiraganaIndex = 0
         loadNextInLevel()
     }
 
@@ -70,17 +85,25 @@ class GameViewModel : ViewModel() {
                 return
             }
 
-            val levelHiraganas = HiraganaData.levels[currentLevel]
-            if (currentIndexInLevel >= levelHiraganas.size) {
-                currentIndexInLevel = 0
-            }
+            val currentHiragana = levelHiraganas[currentHiraganaIndex]
 
-            val currentHiragana = levelHiraganas[currentIndexInLevel]
-
+            // 70% из текущего ряда, 30% из алфавита
+            val currentRowRomaji = levelHiraganas.map { it.romaji }.shuffled()
             val allRomaji = HiraganaData.levels.flatten().map { it.romaji }.shuffled()
+
             val options = mutableListOf<String>()
             options.add(currentHiragana.romaji)
 
+            // Сначала 2 из текущего ряда
+            repeat(2) {
+                val randomRomaji = currentRowRomaji.random()
+                if (randomRomaji != currentHiragana.romaji && !options.contains(randomRomaji)) {
+                    options.add(randomRomaji)
+                    return@repeat
+                }
+            }
+
+            // Если не хватило — из всего алфавита
             var attempts = 0
             while (options.size < 3 && attempts < 50) {
                 val randomRomaji = allRomaji.random()
@@ -102,7 +125,7 @@ class GameViewModel : ViewModel() {
             )
         } catch (e: Exception) {
             _uiState.value = GameUiState(
-                error = "Ошибка загрузки: ${e.message}",
+                error = "Ошибка: ${e.message}",
                 isLoading = false
             )
         }
