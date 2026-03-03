@@ -3,9 +3,12 @@ package com.example.hiragana.ui.views
 import com.example.hiragana.data.Hiragana
 import com.example.hiragana.data.HiraganaData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class GameViewModel : ViewModel() {
     private var currentLevel = 0
@@ -16,19 +19,53 @@ class GameViewModel : ViewModel() {
     private val levelHiraganas = mutableListOf<Hiragana>()
     private var currentHiraganaIndex = 0
 
+    // НОВОЕ: состояние для цветной обратной связи
+    private val _answerResult = MutableStateFlow<AnswerResult?>(null)
+    val answerResult: StateFlow<AnswerResult?> = _answerResult.asStateFlow()
+
     private val _uiState = MutableStateFlow(GameUiState(isLoading = true))
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
+
+    private val _currentScreen = MutableStateFlow("main")
+    val currentScreen: StateFlow<String> = _currentScreen.asStateFlow()
+
+    private val _showAlphabet = MutableStateFlow(false)
+    val showAlphabet: StateFlow<Boolean> = _showAlphabet.asStateFlow()
+
+    fun goToAlphabet() {
+        _showAlphabet.value = true
+    }
+
+    fun backFromAlphabet() {
+        _showAlphabet.value = false
+    }
+
 
     fun startGame() {
         currentLevel = 0
         completions = 0
         score = 0
+        _answerResult.value = null
 
-        // Перемешиваем ВСЕ буквы уровня
         levelHiraganas.clear()
         levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
         currentHiraganaIndex = 0
 
+        _currentScreen.value = "game"
+        loadNextInLevel()
+    }
+
+    fun startPracticeRow(rowIndex: Int) {
+        currentLevel = rowIndex
+        completions = 0
+        score = 0
+        _answerResult.value = null
+
+        levelHiraganas.clear()
+        levelHiraganas.addAll(HiraganaData.levels[rowIndex].shuffled())
+        currentHiraganaIndex = 0
+
+        _currentScreen.value = "game"  // ← Переход в GameScreen!
         loadNextInLevel()
     }
 
@@ -36,11 +73,13 @@ class GameViewModel : ViewModel() {
         val state = uiState.value
         val correct = state.currentHiragana.romaji == answer
 
+        // Показываем цвет сразу
+        _answerResult.value = if (correct) AnswerResult.CORRECT else AnswerResult.INCORRECT
+
         if (correct) {
             score += 10
             currentHiraganaIndex++
 
-            // Проверяем, прошли ли ВСЕ буквы уровня (в случайном порядке)
             if (currentHiraganaIndex >= levelHiraganas.size) {
                 completions++
                 if (completions >= 3) {
@@ -53,29 +92,36 @@ class GameViewModel : ViewModel() {
                         startNewLevel()
                     }
                 } else {
-                    // Повторяем уровень — перемешиваем заново
                     startNewLevel()
                 }
             } else {
-                loadNextInLevel()
+                nextHiraganaWithDelay()
             }
         } else {
-            // Неправильно — начинаем уровень заново с НОВЫМ перемешиванием
+            // Неправильно — новый рандом из уровня
             levelHiraganas.clear()
             levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
             currentHiraganaIndex = 0
-            loadNextInLevel()
+            nextHiraganaWithDelay()
         }
 
         _uiState.value = uiState.value.copy(score = score)
         return correct
     }
 
+    private fun nextHiraganaWithDelay() {
+        viewModelScope.launch {
+            delay(50)  // 1 секунда на цвет
+            _answerResult.value = null
+            loadNextInLevel()
+        }
+    }
+
     private fun startNewLevel() {
         levelHiraganas.clear()
         levelHiraganas.addAll(HiraganaData.levels[currentLevel].shuffled())
         currentHiraganaIndex = 0
-        loadNextInLevel()
+        nextHiraganaWithDelay()
     }
 
     private fun loadNextInLevel() {
@@ -87,14 +133,12 @@ class GameViewModel : ViewModel() {
 
             val currentHiragana = levelHiraganas[currentHiraganaIndex]
 
-            // 70% из текущего ряда, 30% из алфавита
             val currentRowRomaji = levelHiraganas.map { it.romaji }.shuffled()
             val allRomaji = HiraganaData.levels.flatten().map { it.romaji }.shuffled()
 
             val options = mutableListOf<String>()
             options.add(currentHiragana.romaji)
 
-            // Сначала 2 из текущего ряда
             repeat(2) {
                 val randomRomaji = currentRowRomaji.random()
                 if (randomRomaji != currentHiragana.romaji && !options.contains(randomRomaji)) {
@@ -103,7 +147,6 @@ class GameViewModel : ViewModel() {
                 }
             }
 
-            // Если не хватило — из всего алфавита
             var attempts = 0
             while (options.size < 3 && attempts < 50) {
                 val randomRomaji = allRomaji.random()
@@ -130,6 +173,22 @@ class GameViewModel : ViewModel() {
             )
         }
     }
+
+    fun goBackToMain() {
+        _currentScreen.value = "main"
+        resetGame()
+    }
+
+    private fun resetGame() {
+        _answerResult.value = null
+        levelHiraganas.clear()
+        currentHiraganaIndex = 0
+    }
+}
+
+// НОВОЕ: enum для цветовой обратной связи
+enum class AnswerResult {
+    CORRECT, INCORRECT
 }
 
 data class GameUiState(

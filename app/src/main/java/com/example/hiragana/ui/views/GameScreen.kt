@@ -1,160 +1,174 @@
 package com.example.hiragana.ui.views
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontWeight.Companion.Bold
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     viewModel: GameViewModel,
-    onNavigateToAlphabet: () -> Unit = {}
+    onNavigateToAlphabet: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     var lastResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
-    // ✅ УБИРАЕМ LaunchedEffect — НЕ сбрасываем прогресс!
-
-    // Автозапуск ТОЛЬКО при первой загрузке
     LaunchedEffect(state.isLoading) {
         if (state.isLoading) {
             scope.launch {
-                viewModel.startGame()
+                viewModel.startPracticeRow(0)
             }
         }
     }
 
     Scaffold(
-        bottomBar = {
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onNavigateToAlphabet,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp, vertical = 16.dp)
-                    .height(56.dp)
-            ) {
-                Text("📚 Посмотреть алфавит", fontSize = 18.sp)
-            }
-            Spacer(modifier = Modifier.height(32.dp))
+        topBar = {
+            TopAppBar(
+                title = { Text("Практика Хираганы") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateToAlphabet) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "К алфавиту")
+                    }
+                }
+            )
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             when {
                 state.isLoading -> CircularProgressIndicator()
-                state.error != null -> Text(
-                    "Ошибка: ${state.error}",
-                    color = MaterialTheme.colorScheme.error
-                )
+                state.error != null -> Text("Ошибка: ${state.error}", color = Color.Red)
                 state.gameWon -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🎉 Поздравляем! 🎉", fontSize = 32.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Все уровни пройдены!", fontSize = 24.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Итоговый счёт: ${state.score}", fontSize = 20.sp)
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(onClick = { viewModel.startGame() }) {
-                        Text("Начать заново")
+                    Text("🎉 Поздравляем!", fontSize = 28.sp)
+                    Text("Счёт: ${state.score}", fontSize = 18.sp)
+                    Button(onClick = { viewModel.startPracticeRow(0) }) {
+                        Text("Играть снова")
                     }
                 }
-                else -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    // ✅ FEEDBACK ПОД СИМВОЛОМ (компактный, 60dp)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp)
-                            .padding(vertical = 8.dp)
-                    ) {
-                        lastResult?.let { (isCorrect, _) ->
-                            Text(
-                                text = if (isCorrect) "✅ Правильно!" else "❌ Неверно!",
-                                fontSize = 20.sp,
-                                color = if (isCorrect) Color.Green else Color.Red,
-                                modifier = Modifier.align(Alignment.Center)
-                            )
+                else -> {
+                    // 1. ПРОГРЕСС
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Ряд ${state.level}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("Проходов: ${state.completions + 1}/3")
+                            LinearProgressIndicator(progress = { (state.completions + 1f) / 3f })
                         }
                     }
 
-                    // ✅ СИМВОЛ ХИРАГАНА (центр экрана)
-                    Text(
-                        text = state.currentHiragana.symbol,
-                        fontSize = 140.sp,
-                        fontWeight = Bold,
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. РОМАДЗИ (раскомментировано)
+/*                    Text(
+                        text = state.currentHiragana.romaji,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    )*/
+
+                    // 3. ЦВЕТНАЯ БУКВА
+                    GameCard(
+                        currentKana = state.currentHiragana.symbol,
+                        isCorrect = lastResult?.first,
                         modifier = Modifier.padding(vertical = 16.dp)
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Прогресс уровня
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "Уровень ${state.level} (${state.currentLevelHiraganas.size} букв)",
-                                fontSize = 18.sp
-                            )
-                            Text("Проходов: ${state.completions + 1} из 3")
-                            LinearProgressIndicator(
-                                progress = { (state.completions + 1f) / 3f },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    // Кнопки ответов
+                    // 4. КНОПКИ ОТВЕТОВ
                     state.options.forEach { option ->
                         OutlinedButton(
                             onClick = {
                                 val correct = viewModel.selectAnswer(option)
                                 lastResult = correct to option
                                 scope.launch {
-                                    kotlinx.coroutines.delay(2000)
+                                    kotlinx.coroutines.delay(50)
                                     lastResult = null
                                 }
                             },
+                            enabled = lastResult == null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .height(64.dp)
+                                .height(56.dp)
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Text(option, fontSize = 24.sp)
+                            Text(option, fontSize = 20.sp, fontWeight = FontWeight.Medium)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Счёт
-                    Text(
-                        text = "Очки: ${state.score}",
-                        fontSize = 28.sp,
-                        fontWeight = Bold
-                    )
+                    // 5. СЧЁТ (раскомментировано)
+/*                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Text(
+                            text = "Очки: ${state.score}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }*/
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GameCard(
+    currentKana: String,
+    isCorrect: Boolean?,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = when (isCorrect) {
+        true -> Color(0xFF4CAF50).copy(alpha = 0.3f)
+        false -> Color(0xFFF44336).copy(alpha = 0.3f)
+        null -> Color.Transparent
+    }
+
+    Card(
+        modifier = modifier.size(180.dp),  // Компактнее
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = currentKana,
+                fontSize = 90.sp,  // Компактнее
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp)
+            )
         }
     }
 }

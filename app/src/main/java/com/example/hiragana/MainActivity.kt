@@ -34,6 +34,7 @@ fun App(gameViewModel: GameViewModel = viewModel()) {  // ← Shared ViewModel!
             onNavigateToAlphabet = { currentScreen = "alphabet" }
         )
         "alphabet" -> AlphabetScreen(
+            viewModel = gameViewModel,  // ← ДОБАВЬ ЭТО!
             onBack = { currentScreen = "game" }
         )
     }
